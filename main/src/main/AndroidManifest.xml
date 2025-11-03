@@ -107,6 +107,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity
+            android:name="ru.nicesoft.openvpn.ui.LogActivity"
+            android:exported="false"
+            android:label="@string/openvpn_log" />
         <!--
         <receiver android:name="core.GetRestrictionReceiver">
             <intent-filter>

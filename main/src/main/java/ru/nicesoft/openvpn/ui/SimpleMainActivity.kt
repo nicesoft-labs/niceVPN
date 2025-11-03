@@ -99,6 +99,9 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         logButton.setTextColor(textColor)
         importButton.setTextColor(textColor)
 
+        logButton.setOnClickListener {
+            startActivity(android.content.Intent(this, LogActivity::class.java))
+        }
         importButton.setOnClickListener {
             importConfigLauncher.launch(arrayOf("*/*"))
         }
