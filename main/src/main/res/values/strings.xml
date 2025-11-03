@@ -521,4 +521,8 @@
     <string name="confirmations_title">Disable VPN connection confirmations</string>
     <string name="confirmations_summary">(Not recommended) Disables confirmations when connecting/disconnecting VPN. This disables the safeguard to accidientially disconnect VPN connections</string>
 
+    <string name="simple_start">START</string>
+    <string name="simple_stop">STOP</string>
+    <string name="simple_log">LOG</string>
+    <string name="simple_import">IMPORT</string>
 </resources>
