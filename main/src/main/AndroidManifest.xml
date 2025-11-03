@@ -93,24 +93,26 @@
 
 
         <activity
-            android:name=".LaunchVPN"
-            android:autoRemoveFromRecents="true"
-            android:excludeFromRecents="true"
-            android:label="@string/vpn_launch_title"
-            android:taskAffinity=".LaunchVPN"
-            android:theme="@style/blinkt.dialog"
-            android:exported="true">
-
+            android:name="ru.nicesoft.openvpn.ui.SimpleMainActivity"
+            android:exported="true"
+            android:label="@string/app">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
         <activity
             android:name="ru.nicesoft.openvpn.ui.LogActivity"
             android:exported="false"
             android:label="@string/openvpn_log" />
+        <activity
+            android:name=".LaunchVPN"
+            android:autoRemoveFromRecents="true"
+            android:excludeFromRecents="true"
+            android:label="@string/vpn_launch_title"
+            android:taskAffinity=".LaunchVPN"
+            android:theme="@style/blinkt.dialog" />
         <!--
         <receiver android:name="core.GetRestrictionReceiver">
             <intent-filter>
