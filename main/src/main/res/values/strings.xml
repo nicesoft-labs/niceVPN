@@ -525,4 +525,5 @@
     <string name="simple_stop">STOP</string>
     <string name="simple_log">LOG</string>
     <string name="simple_import">IMPORT</string>
+    <string name="simple_log_empty">No log messages yet.</string>
 </resources>
