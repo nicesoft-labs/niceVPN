@@ -1,6 +1,5 @@
 package ru.nicesoft.openvpn.ui
 
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -10,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import de.blinkt.openvpn.LaunchVPN
 import de.blinkt.openvpn.R
 import de.blinkt.openvpn.VpnProfile
 import de.blinkt.openvpn.core.ConfigParser
@@ -17,6 +17,7 @@ import de.blinkt.openvpn.core.ConfigParser.ConfigParseError
 import de.blinkt.openvpn.core.ConnectionStatus
 import de.blinkt.openvpn.core.Preferences
 import de.blinkt.openvpn.core.ProfileManager
+import de.blinkt.openvpn.core.OpenVPNService
 import de.blinkt.openvpn.core.VpnStatus
 import java.io.IOException
 import java.io.InputStreamReader
@@ -29,6 +30,8 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
     private lateinit var startStopButton: Button
     private lateinit var logButton: Button
     private lateinit var importButton: Button
+    private var activeProfile: VpnProfile? = null
+    private var currentStatus: ConnectionStatus? = null
 
     private val importConfigLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -47,12 +50,17 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         configurePrimaryButton()
         configureSecondaryButtons()
 
-        VpnStatus.addStateListener(this)
-        updateStartStopButton(VpnStatus.isVPNActive())
+        activeProfile = loadActiveProfile()
+        updateStartStopState(ConnectionStatus.LEVEL_NOTCONNECTED)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    override fun onStart() {
+        super.onStart()
+        VpnStatus.addStateListener(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
         VpnStatus.removeStateListener(this)
     }
 
@@ -61,10 +69,11 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         logmessage: String?,
         localizedResId: Int,
         level: ConnectionStatus?,
-        intent: Intent?,
+        intent: android.content.Intent?,
     ) {
         runOnUiThread {
-            updateStartStopButton(VpnStatus.isVPNActive())
+            currentStatus = level
+            updateStartStopState(level)
         }
     }
 
@@ -74,7 +83,7 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
 
     private fun configurePrimaryButton() {
         startStopButton.setOnClickListener {
-            updateStartStopButton(!VpnStatus.isVPNActive())
+            handleStartStop()
         }
     }
 
@@ -95,9 +104,15 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         }
     }
 
-    private fun updateStartStopButton(isActive: Boolean) {
-        val textRes = if (isActive) R.string.simple_stop else R.string.simple_start
-        val tintRes = if (isActive) R.color.simple_button_stop else R.color.simple_button_start
+    private fun updateStartStopState(status: ConnectionStatus?) {
+        val (textRes, tintRes) = when (status) {
+            ConnectionStatus.LEVEL_NOTCONNECTED,
+            ConnectionStatus.LEVEL_AUTH_FAILED,
+            ConnectionStatus.LEVEL_NONETWORK,
+            ConnectionStatus.UNKNOWN_LEVEL,
+            null -> R.string.simple_start to R.color.simple_button_start
+            else -> R.string.simple_stop to R.color.simple_button_stop
+        }
         startStopButton.text = getString(textRes)
 
         ContextCompat.getColorStateList(this, tintRes)?.let { tint ->
@@ -109,6 +124,47 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         startStopButton.setTextColor(ContextCompat.getColor(this, R.color.simple_button_text))
     }
 
+    private fun loadActiveProfile(): VpnProfile? {
+        val uuid = Preferences.getDefaultSharedPreferences(this)
+            .getString(PREF_IMPORTED_PROFILE_UUID, null)
+            ?: return null
+
+        return ProfileManager.get(this, uuid)
+    }
+
+    private fun handleStartStop() {
+        val shouldStart = when (currentStatus) {
+            ConnectionStatus.LEVEL_NOTCONNECTED,
+            ConnectionStatus.LEVEL_AUTH_FAILED,
+            ConnectionStatus.LEVEL_NONETWORK,
+            ConnectionStatus.UNKNOWN_LEVEL,
+            null -> true
+            else -> false
+        }
+
+        if (shouldStart) {
+            val profile = activeProfile ?: loadActiveProfile()?.also { activeProfile = it }
+            if (profile == null) {
+                Toast.makeText(this, R.string.shortcut_profile_notfound, Toast.LENGTH_LONG).show()
+                return
+            }
+
+            ProfileManager.saveProfile(this, profile)
+
+            val intent = android.content.Intent(this, LaunchVPN::class.java).apply {
+                putExtra(LaunchVPN.EXTRA_KEY, profile.uuidString)
+                putExtra(OpenVPNService.EXTRA_START_REASON, "simple main activity")
+                action = android.content.Intent.ACTION_MAIN
+            }
+            startActivity(intent)
+        } else {
+            val disconnectIntent = android.content.Intent(this, OpenVPNService::class.java).apply {
+                action = OpenVPNService.DISCONNECT_VPN
+            }
+            startService(disconnectIntent)
+        }
+    }
+
     private fun handleImportResult(uri: Uri) {
         lifecycleScope.launch {
             val profile = withContext(Dispatchers.IO) { parseProfile(uri) }
@@ -116,7 +172,8 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
                 saveImportedProfile(profile)
                 Toast.makeText(this@SimpleMainActivity, R.string.import_done, Toast.LENGTH_SHORT)
                     .show()
-                updateStartStopButton(false)
+                currentStatus = ConnectionStatus.LEVEL_NOTCONNECTED
+                updateStartStopState(currentStatus)
             } else {
                 Toast.makeText(
                     this@SimpleMainActivity,
@@ -165,6 +222,8 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
             .edit()
             .putString(PREF_IMPORTED_PROFILE_UUID, profile.uuidString)
             .apply()
+
+        activeProfile = profile
     }
 
     private fun queryDisplayName(uri: Uri): String? {
