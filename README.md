@@ -1,4 +1,4 @@
-OpenVPN for Android
+OpenVPN for Android nice
 =============
 ![build status](https://github.com/schwabe/ics-openvpn/actions/workflows/build.yaml/badge.svg)
 
