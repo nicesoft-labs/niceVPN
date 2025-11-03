@@ -15,7 +15,6 @@ import de.blinkt.openvpn.VpnProfile
 import de.blinkt.openvpn.core.ConfigParser
 import de.blinkt.openvpn.core.ConfigParser.ConfigParseError
 import de.blinkt.openvpn.core.ConnectionStatus
-import de.blinkt.openvpn.core.Preferences
 import de.blinkt.openvpn.core.ProfileManager
 import de.blinkt.openvpn.core.OpenVPNService
 import de.blinkt.openvpn.core.VpnStatus
@@ -24,12 +23,14 @@ import java.io.InputStreamReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ru.nicesoft.openvpn.data.ActiveProfileStore
 
 class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
 
     private lateinit var startStopButton: Button
     private lateinit var logButton: Button
     private lateinit var importButton: Button
+    private lateinit var activeProfileStore: ActiveProfileStore
     private var activeProfile: VpnProfile? = null
     private var currentStatus: ConnectionStatus? = null
 
@@ -46,17 +47,20 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         startStopButton = findViewById(R.id.button_start_stop)
         logButton = findViewById(R.id.button_log)
         importButton = findViewById(R.id.button_import)
+        activeProfileStore = ActiveProfileStore(this)
 
         configurePrimaryButton()
         configureSecondaryButtons()
 
-        activeProfile = loadActiveProfile()
+        syncActiveProfile()
         updateStartStopState(ConnectionStatus.LEVEL_NOTCONNECTED)
     }
 
     override fun onStart() {
         super.onStart()
         VpnStatus.addStateListener(this)
+        syncActiveProfile()
+        updateStartStopState(currentStatus)
     }
 
     override fun onStop() {
@@ -127,14 +131,6 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         startStopButton.setTextColor(ContextCompat.getColor(this, R.color.simple_button_text))
     }
 
-    private fun loadActiveProfile(): VpnProfile? {
-        val uuid = Preferences.getDefaultSharedPreferences(this)
-            .getString(PREF_IMPORTED_PROFILE_UUID, null)
-            ?: return null
-
-        return ProfileManager.get(this, uuid)
-    }
-
     private fun handleStartStop() {
         val shouldStart = when (currentStatus) {
             ConnectionStatus.LEVEL_NOTCONNECTED,
@@ -146,9 +142,10 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         }
 
         if (shouldStart) {
-            val profile = activeProfile ?: loadActiveProfile()?.also { activeProfile = it }
+            val profile = activeProfile ?: activeProfileStore.getActiveProfile()?.also { activeProfile = it }
             if (profile == null) {
                 Toast.makeText(this, R.string.shortcut_profile_notfound, Toast.LENGTH_LONG).show()
+                startStopButton.isEnabled = false
                 return
             }
 
@@ -176,6 +173,7 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
                 Toast.makeText(this@SimpleMainActivity, R.string.import_done, Toast.LENGTH_SHORT)
                     .show()
                 currentStatus = ConnectionStatus.LEVEL_NOTCONNECTED
+                syncActiveProfile()
                 updateStartStopState(currentStatus)
             } else {
                 Toast.makeText(
@@ -213,6 +211,9 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
     private fun saveImportedProfile(profile: VpnProfile) {
         val profileManager = ProfileManager.getInstance(this)
         val existingProfiles = profileManager.getProfiles().toList()
+        if (existingProfiles.isNotEmpty()) {
+            activeProfileStore.clear()
+        }
         existingProfiles.forEach { existingProfile ->
             profileManager.removeProfile(this, existingProfile)
         }
@@ -221,10 +222,7 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
         ProfileManager.saveProfile(this, profile)
         profileManager.saveProfileList(this)
 
-        Preferences.getDefaultSharedPreferences(this)
-            .edit()
-            .putString(PREF_IMPORTED_PROFILE_UUID, profile.uuidString)
-            .apply()
+        activeProfileStore.setActiveProfile(profile)
 
         activeProfile = profile
     }
@@ -236,7 +234,8 @@ class SimpleMainActivity : AppCompatActivity(), VpnStatus.StateListener {
             }
     }
 
-    companion object {
-        private const val PREF_IMPORTED_PROFILE_UUID = "simple_imported_profile_uuid"
+    private fun syncActiveProfile() {
+        activeProfile = activeProfileStore.getActiveProfile()
+        startStopButton.isEnabled = activeProfile != null
     }
 }
